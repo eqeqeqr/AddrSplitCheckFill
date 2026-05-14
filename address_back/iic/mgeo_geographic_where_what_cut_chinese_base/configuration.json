@@ -1,0 +1,128 @@
+{
+    "framework": "pytorch",
+    "task": "token-classification",
+    "model": {
+        "type": "mgeo",
+        "language": "zh",
+        "id2label": {
+            "0": "B-/OTHER",
+            "1": "B-/WHAT",
+            "2": "B-/WHERE",
+            "3": "E-/OTHER",
+            "4": "E-/WHAT",
+            "5": "E-/WHERE",
+            "6": "I-/OTHER",
+            "7": "I-/WHAT",
+            "8": "I-/WHERE",
+            "9": "S-/OTHER",
+            "10": "S-/WHAT",
+            "11": "S-/WHERE"
+        },
+        "label2id": {
+            "B-/OTHER": 0,
+            "B-/WHAT": 1,
+            "B-/WHERE": 2,
+            "E-/OTHER": 3,
+            "E-/WHAT": 4,
+            "E-/WHERE": 5,
+            "I-/OTHER": 6,
+            "I-/WHAT": 7,
+            "I-/WHERE": 8,
+            "S-/OTHER": 9,
+            "S-/WHAT": 10,
+            "S-/WHERE": 11
+        },
+        "num_labels": 12
+    },
+    "pipeline": {
+        "type": "token-classification"
+    },
+    "preprocessor": {
+        "type": "token-cls-tokenizer",
+        "padding": "max_length",
+        "model_dir": "mgeo_duiwai_v1",
+        "label2id": {
+            "B-/OTHER": 0,
+            "B-/WHAT": 1,
+            "B-/WHERE": 2,
+            "E-/OTHER": 3,
+            "E-/WHAT": 4,
+            "E-/WHERE": 5,
+            "I-/OTHER": 6,
+            "I-/WHAT": 7,
+            "I-/WHERE": 8,
+            "S-/OTHER": 9,
+            "S-/WHAT": 10,
+            "S-/WHERE": 11
+        },
+        "first_sequence": "tokens",
+        "label": "ner_tags",
+        "mode": "inference",
+        "use_fast": true
+    },
+    "train": {
+        "work_dir": "/tmp",
+        "max_epochs": 10,
+        "dataloader": {
+            "batch_size_per_gpu": 32,
+            "workers_per_gpu": 1
+        },
+        "optimizer": {
+            "type": "AdamW",
+            "lr": 1e-05
+        },
+        "lr_scheduler": {
+            "type": "LinearLR",
+            "start_factor": 1.0,
+            "end_factor": 0.0,
+            "total_iters": 2900
+        },
+        "hooks": [
+            {
+                "type": "CheckpointHook",
+                "interval": 1
+            },
+            {
+                "type": "TextLoggerHook",
+                "interval": 100
+            },
+            {
+                "type": "IterTimerHook"
+            },
+            {
+                "type": "EvaluationHook",
+                "by_epoch": true
+            }
+        ]
+    },
+    "evaluation": {
+        "dataloader": {
+            "batch_size_per_gpu": 32,
+            "workers_per_gpu": 1,
+            "shuffle": false
+        }
+    },
+    "dataset": {
+        "train": {
+            "labels": [
+                "B-/OTHER",
+                "B-/WHAT",
+                "B-/WHERE",
+                "E-/OTHER",
+                "E-/WHAT",
+                "E-/WHERE",
+                "I-/OTHER",
+                "I-/WHAT",
+                "I-/WHERE",
+                "S-/OTHER",
+                "S-/WHAT",
+                "S-/WHERE"
+            ],
+            "first_sequence": "tokens",
+            "label": "ner_tags",
+            "sequence_length": 128,
+            "mode": "train"
+        }
+    },
+    "allow_remote": true
+}
