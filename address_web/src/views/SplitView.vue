@@ -5,11 +5,6 @@
       subtitle="支持上传Excel文件或手动输入地址，拆分为明细地址信息及结果录别"
     />
 
-    <div v-if="redisStatus && !redisStatus.available" class="redis-warning">
-      <strong>Redis 未连接</strong>
-      <span>{{ redisStatus.message }}</span>
-    </div>
-
     <section class="card section-card split-hero">
       <TabSwitcher v-model="activeTab" :tabs="splitTabs" compact />
 
@@ -266,7 +261,6 @@ import {
   createSplitJobId,
   getColumnSettings,
   getManualInputSeed,
-  getRedisStatus,
   getSplitPreview,
   getSplitResultDetail,
   inspectExcelFile,
@@ -275,7 +269,6 @@ import {
   updateVisibleColumns,
 } from '../api/address'
 import type { SplitJobResponse, SplitProgressEvent } from '../api/address'
-import type { RedisStatusResponse } from '../api/address'
 import BaseTable from '../components/BaseTable.vue'
 import ColumnSettingsModal from '../components/ColumnSettingsModal.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -297,7 +290,6 @@ const selectedFile = ref<File | null>(null)
 const fileInputRef = ref<HTMLInputElement | null>(null)
 const isProcessing = ref(false)
 const isCancelling = ref(false)
-const redisStatus = ref<RedisStatusResponse | null>(null)
 const isInspectingExcel = ref(false)
 const errorMessage = ref('')
 const downloadUrl = ref('')
@@ -351,21 +343,6 @@ const selectedFileSize = computed(() => {
 
   return `${mb.toFixed(2)} MB`
 })
-
-const loadRedisStatus = async () => {
-  try {
-    redisStatus.value = await getRedisStatus()
-  } catch {
-    redisStatus.value = {
-      available: false,
-      mode: 'local',
-      host: '127.0.0.1',
-      port: 6379,
-      db: 0,
-      message: '当前未连接 Redis，系统将使用本地模式运行；如需跨任务缓存和高性能记录查询，请安装或配置 Redis。',
-    }
-  }
-}
 
 const excelInspectText = computed(() => {
   if (isInspectingExcel.value) {
@@ -821,7 +798,6 @@ onMounted(async () => {
   const [seed, rows] = await Promise.all([
     getManualInputSeed(),
     getSplitPreview(),
-    loadRedisStatus(),
   ])
 
   manualInput.value = seed
@@ -965,22 +941,6 @@ onBeforeUnmount(stopProgressTimer)
   color: var(--danger);
   font-size: 14px;
   font-weight: 600;
-}
-
-.redis-warning {
-  display: flex;
-  gap: 10px;
-  align-items: flex-start;
-  margin-bottom: 16px;
-  padding: 14px 16px;
-  border: 1px solid #fed7aa;
-  border-radius: 14px;
-  color: #9a3412;
-  background: #fff7ed;
-}
-
-.redis-warning strong {
-  flex: none;
 }
 
 .progress-panel h3 {

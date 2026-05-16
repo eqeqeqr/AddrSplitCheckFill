@@ -35,12 +35,18 @@ export interface SplitJobResponse {
 
 export interface SplitProgressEvent {
   job_id: string
+  event_type?: 'progress' | 'agent_stream' | 'stage'
   phase: 'parsing' | 'splitting' | 'summary' | 'done' | 'cancelled' | 'error'
   processed_rows: number
   total_rows: number
   elapsed_seconds: number
   message?: string
   cached_job_id?: string
+  stage?: string
+  row_id?: string
+  title?: string
+  content?: string
+  payload?: Record<string, unknown>
 }
 
 export interface SplitResultDetailResponse {
@@ -69,12 +75,24 @@ export interface ExcelInspectResponse {
 }
 
 export interface RedisConfig {
+  id?: string
   mode: 'local' | 'remote' | 'disabled'
   host: string
   port: number
   db: number
   password: string
+  active?: boolean
   updatedAt?: string
+}
+
+export interface RedisConfigListResponse {
+  activeId: string
+  configs: RedisConfig[]
+}
+
+export interface RedisConfigActivateResponse {
+  activeId: string
+  config: RedisConfig
 }
 
 export interface RedisTestResponse {
@@ -91,9 +109,129 @@ export interface RedisStatusResponse {
   message: string
 }
 
+export interface ModelConfig {
+  id?: string
+  provider: string
+  baseUrl: string
+  apiKey: string
+  model: string
+  active?: boolean
+  updatedAt?: string
+}
+
+export interface ModelConfigListResponse {
+  activeId: string
+  models: ModelConfig[]
+}
+
+export interface ModelConfigTestResponse {
+  ok: boolean
+  message: string
+}
+
+export interface ModelConfigActivateResponse {
+  activeId: string
+  model: ModelConfig
+}
+
 export interface ValidationRuleImportResponse {
   imported: number
   rules: ValidationRule[]
+}
+
+export interface AddressFillInputInspectResponse {
+  filename: string
+  totalRows: number
+  columns: string[]
+  columnMode: 'level8' | 'level11' | ''
+  accepted: boolean
+  message: string
+}
+
+export interface AddressFillSplitResult {
+  id: string
+  taskName: string
+  total: number
+  columnMode: string
+  splitScheme: string
+  startedAt: string
+}
+
+export interface AddressFillWorkflowEvent {
+  event_id: string
+  job_id: string
+  phase: string
+  event_type: string
+  title: string
+  summary: string
+  status: string
+  sequence: number
+  created_at: string
+  payload: Record<string, unknown>
+}
+
+export interface AddressFillJobDetail {
+  job_id: string
+  client_id: string
+  status: string
+  task_name: string
+  input_source: string
+  source_count: number
+  total_rows: number
+  success_rows: number
+  failed_rows: number
+  columns: string[]
+  column_mode: string
+  result_file?: string
+  created_at: string
+  updated_at: string
+  error?: string
+}
+
+export interface AddressFillLatestWorkflowResponse {
+  job: AddressFillJobDetail | null
+  events: AddressFillWorkflowEvent[]
+}
+
+export interface AddressFillJobResponse {
+  job_id: string
+  status: string
+  total_rows: number
+  processed_rows: number
+  columns: string[]
+  preview: Array<Record<string, string | number | null>>
+  download_url: string
+}
+
+export interface AddressFillResultDetailResponse {
+  stats: {
+    total: string
+    success: string
+    failed: string
+    successRate: string
+  }
+  rows: Array<Record<string, string | number | null>>
+  columns: string[]
+  columnMode: string
+  failedRows: Array<Record<string, string | number | null>>
+  downloadUrl: string
+  page: number
+  pageSize: number
+  totalRows: number
+}
+
+export interface AddressFillRecord {
+  id: string
+  taskName: string
+  inputSource: string
+  sourceCount: number
+  total: number
+  success: number
+  failed: number
+  status: 'success' | 'partial'
+  startedAt: string
+  columnMode: string
+  downloadUrl: string
 }
 
 const requestJson = async <T>(url: string, init?: RequestInit): Promise<T> => {
@@ -192,17 +330,35 @@ export const connectSplitProgress = (
 ) => {
   const base = API_BASE_URL.replace(/^http/, 'ws').replace(/\/api$/, '')
   const socket = new WebSocket(`${base}/api/ws/splits/${jobId}`)
+  let heartbeatTimer: ReturnType<typeof setTimeout> | undefined
+
+  const resetHeartbeat = () => {
+    if (heartbeatTimer !== undefined) clearTimeout(heartbeatTimer)
+    heartbeatTimer = setTimeout(() => {
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close()
+      }
+    }, 30_000)
+  }
 
   socket.addEventListener('message', (event) => {
+    resetHeartbeat()
     try {
       handlers.onMessage(JSON.parse(event.data) as SplitProgressEvent)
     } catch {
       // Ignore malformed progress frames; the final HTTP response still applies.
     }
   })
-  socket.addEventListener('error', () => handlers.onError?.())
-  socket.addEventListener('close', () => handlers.onClose?.())
+  socket.addEventListener('error', () => {
+    if (heartbeatTimer !== undefined) clearTimeout(heartbeatTimer)
+    handlers.onError?.()
+  })
+  socket.addEventListener('close', () => {
+    if (heartbeatTimer !== undefined) clearTimeout(heartbeatTimer)
+    handlers.onClose?.()
+  })
 
+  resetHeartbeat()
   return socket
 }
 
@@ -352,6 +508,8 @@ export const getManualInputSeed = async () => {
 
 export const getRedisConfig = async () => requestJson<RedisConfig>('/environment/redis')
 
+export const getRedisConfigs = async () => requestJson<RedisConfigListResponse>('/environment/redis/configs')
+
 export const getRedisStatus = async () => requestJson<RedisStatusResponse>('/environment/redis/status')
 
 export const saveRedisConfig = async (payload: RedisConfig) =>
@@ -359,6 +517,23 @@ export const saveRedisConfig = async (payload: RedisConfig) =>
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+  })
+
+export const saveRedisConfigProfile = async (payload: RedisConfig) =>
+  requestJson<RedisConfig>('/environment/redis/configs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+export const deleteRedisConfig = async (id: string) =>
+  requestJson<{ deleted: boolean }>(`/environment/redis/configs/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+
+export const activateRedisConfig = async (id: string) =>
+  requestJson<RedisConfigActivateResponse>(`/environment/redis/configs/${encodeURIComponent(id)}/activate`, {
+    method: 'POST',
   })
 
 export const disconnectRedisConfig = async () =>
@@ -372,3 +547,180 @@ export const testRedisConfig = async (payload: RedisConfig) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+
+export const getModelConfigs = async () => requestJson<ModelConfigListResponse>('/environment/models')
+
+export const saveModelConfig = async (payload: ModelConfig) =>
+  requestJson<ModelConfig>('/environment/models', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+export const deleteModelConfig = async (id: string) =>
+  requestJson<{ deleted: boolean }>(`/environment/models/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+
+export const testModelConfig = async (payload: ModelConfig) =>
+  requestJson<ModelConfigTestResponse>('/environment/models/test', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+
+export const activateModelConfig = async (id: string) =>
+  requestJson<ModelConfigActivateResponse>(`/environment/models/${encodeURIComponent(id)}/activate`, {
+    method: 'POST',
+  })
+
+export const inspectAddressFillInput = async (file: File) => {
+  const formData = new FormData()
+  formData.append('file', file)
+
+  return requestJson<AddressFillInputInspectResponse>('/address-fill/inputs/inspect', {
+    method: 'POST',
+    body: formData,
+  })
+}
+
+export const getAddressFillSplitResults = async () =>
+  requestJson<AddressFillSplitResult[]>('/address-fill/split-results')
+
+export const createAddressFillJob = async (payload: {
+  clientId: string
+  inputFile?: File | null
+  splitJobId?: string
+  sourceFiles?: File[]
+  clientJobId?: string
+}) => {
+  const formData = new FormData()
+  formData.append('client_id', payload.clientId)
+  if (payload.clientJobId) {
+    formData.append('client_job_id', payload.clientJobId)
+  }
+  if (payload.inputFile) {
+    formData.append('input_file', payload.inputFile)
+  }
+  if (payload.splitJobId) {
+    formData.append('split_job_id', payload.splitJobId)
+  }
+  for (const file of payload.sourceFiles ?? []) {
+    formData.append('source_files', file)
+  }
+
+  return requestJson<AddressFillJobResponse>('/address-fill/jobs', {
+    method: 'POST',
+    body: formData,
+  })
+}
+
+export const getAddressFillLatestWorkflow = async (clientId: string) => {
+  const search = new URLSearchParams({ client_id: clientId })
+  return requestJson<AddressFillLatestWorkflowResponse>(`/address-fill/workflow/latest?${search.toString()}`)
+}
+
+export const getAddressFillEvents = async (jobId: string, afterEventId?: string) => {
+  const search = new URLSearchParams()
+  if (afterEventId) {
+    search.set('after_event_id', afterEventId)
+  }
+  const suffix = search.toString() ? `?${search.toString()}` : ''
+  const response = await fetch(`${API_BASE_URL}/address-fill/jobs/${jobId}/events${suffix}`)
+  if (response.status === 404) return []
+  if (!response.ok) return []
+  return response.json() as Promise<AddressFillWorkflowEvent[]>
+}
+
+export const getAddressFillResultDetail = async (
+  id: string,
+  params: { page?: number; pageSize?: number } = {},
+) => {
+  const search = new URLSearchParams({
+    page: String(params.page ?? 1),
+    page_size: String(params.pageSize ?? 20),
+  })
+  return requestJson<AddressFillResultDetailResponse>(`/address-fill/jobs/${id}/result?${search.toString()}`)
+}
+
+export const getAddressFillRecords = async () => {
+  const records = await requestJson<AddressFillRecord[]>('/address-fill/jobs')
+  return records.map((item) => ({ ...item, downloadUrl: buildDownloadUrl(item.downloadUrl) }))
+}
+
+export const cancelAddressFillJob = async (id: string) =>
+  requestJson<{ cancelled: boolean }>(`/address-fill/jobs/${id}/cancel`, {
+    method: 'POST',
+  })
+
+export const deleteAddressFillRecord = async (id: string) =>
+  requestJson<{ deleted: boolean }>(`/address-fill/jobs/${id}`, {
+    method: 'DELETE',
+  })
+
+export interface AddressFillRowState {
+  job_id: string
+  row_id: string
+  address: string
+  status: 'waiting' | 'running' | 'done' | 'interrupted'
+  step1_status: 'waiting' | 'doing' | 'done'
+  step2_status: 'waiting' | 'doing' | 'done'
+  step3_status: 'waiting' | 'doing' | 'done'
+  step4_status: 'waiting' | 'doing' | 'done'
+  updated_at: string
+}
+
+export const getAddressFillRowStates = async (jobId: string): Promise<AddressFillRowState[]> => {
+  try {
+    return await requestJson<AddressFillRowState[]>(`/address-fill/jobs/${jobId}/row-states`)
+  } catch {
+    return []
+  }
+}
+
+export interface FillProgressEvent extends Omit<SplitProgressEvent, 'phase' | 'event_type'> {
+  phase: SplitProgressEvent['phase'] | 'filling' | 'agent'
+  event_type?: 'progress' | 'agent_stream' | 'stage' | 'step_state_update' | 'full_row_states'
+}
+
+export const connectFillProgress = (
+  jobId: string,
+  handlers: {
+    onMessage: (event: FillProgressEvent) => void
+    onError?: () => void
+    onClose?: () => void
+  },
+) => {
+  const base = API_BASE_URL.replace(/^http/, 'ws').replace(/\/api$/, '')
+  const socket = new WebSocket(`${base}/api/ws/address-fill/${jobId}`)
+  let heartbeatTimer: ReturnType<typeof setTimeout> | undefined
+
+  const resetHeartbeat = () => {
+    if (heartbeatTimer !== undefined) clearTimeout(heartbeatTimer)
+    heartbeatTimer = setTimeout(() => {
+      if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
+        socket.close()
+      }
+    }, 30_000)
+  }
+
+  socket.addEventListener('message', (event) => {
+    resetHeartbeat()
+    try {
+      handlers.onMessage(JSON.parse(event.data) as FillProgressEvent)
+    } catch {
+      // ignore malformed progress frames
+    }
+  })
+  socket.addEventListener('error', () => {
+    if (heartbeatTimer !== undefined) clearTimeout(heartbeatTimer)
+    handlers.onError?.()
+  })
+  socket.addEventListener('close', () => {
+    if (heartbeatTimer !== undefined) clearTimeout(heartbeatTimer)
+    handlers.onClose?.()
+  })
+
+  resetHeartbeat()
+  return socket
+}

@@ -136,6 +136,7 @@ class ValidationRuleImportResponse(BaseModel):
 
 
 class RedisConfigPayload(BaseModel):
+    id: str | None = None
     mode: str = "local"
     host: str = Field(default="127.0.0.1", min_length=1)
     port: int = Field(default=6379, ge=1, le=65535)
@@ -144,7 +145,19 @@ class RedisConfigPayload(BaseModel):
 
 
 class RedisConfigResponse(RedisConfigPayload):
+    id: str = ""
+    active: bool = False
     updatedAt: str = ""
+
+
+class RedisConfigListResponse(BaseModel):
+    activeId: str = ""
+    configs: list[RedisConfigResponse]
+
+
+class RedisConfigActivateResponse(BaseModel):
+    activeId: str
+    config: RedisConfigResponse
 
 
 class RedisTestResponse(BaseModel):
@@ -159,3 +172,40 @@ class RedisStatusResponse(BaseModel):
     port: int
     db: int
     message: str
+
+
+class ModelConfigPayload(BaseModel):
+    id: str | None = None
+    provider: str = Field(min_length=1)
+    baseUrl: str = Field(min_length=1)
+    apiKey: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+
+    @field_validator("provider", "baseUrl", "apiKey", "model")
+    @classmethod
+    def strip_required(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("字段不能为空")
+        return normalized
+
+
+class ModelConfigResponse(ModelConfigPayload):
+    id: str
+    active: bool = False
+    updatedAt: str = ""
+
+
+class ModelConfigListResponse(BaseModel):
+    activeId: str = ""
+    models: list[ModelConfigResponse]
+
+
+class ModelConfigTestResponse(BaseModel):
+    ok: bool
+    message: str
+
+
+class ModelConfigActivateResponse(BaseModel):
+    activeId: str
+    model: ModelConfigResponse

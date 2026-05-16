@@ -5,25 +5,118 @@
     <section class="card section-card">
       <div class="toolbar records-filters">
         <div class="filter-item">
-          <span class="field-label">任务名称</span>
-          <input v-model="taskKeyword" class="input" placeholder="请输入任务名称" />
+          <label class="field-label" for="record-task-keyword">任务名称</label>
+          <input id="record-task-keyword" v-model="taskKeyword" class="input" placeholder="请输入任务名称" />
         </div>
         <div class="filter-item">
-          <span class="field-label">状态</span>
-          <select v-model="statusFilter" class="select">
-            <option v-for="item in statusOptions" :key="item.value" :value="item.value">
-              {{ item.label }}
-            </option>
-          </select>
+          <label class="field-label" for="record-storage-filter">存储位置</label>
+          <div class="custom-select" @click.stop>
+            <button
+              id="record-storage-filter"
+              type="button"
+              class="custom-select-trigger"
+              :class="{ open: openSelect === 'storage' }"
+              aria-haspopup="listbox"
+              :aria-expanded="openSelect === 'storage'"
+              @click="toggleSelect('storage')"
+            >
+              <span>{{ storageFilterLabel }}</span>
+              <ChevronDown :size="17" aria-hidden="true" />
+            </button>
+            <div v-if="openSelect === 'storage'" class="custom-select-menu" role="listbox">
+              <button
+                v-for="item in storageOptions"
+                :key="item.value"
+                type="button"
+                class="custom-select-option"
+                :class="{ active: storageFilter === item.value }"
+                role="option"
+                :aria-selected="storageFilter === item.value"
+                @click="selectStorage(item.value)"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="filter-item">
+          <label class="field-label" for="record-status-filter">状态</label>
+          <div class="custom-select" @click.stop>
+            <button
+              id="record-status-filter"
+              type="button"
+              class="custom-select-trigger"
+              :class="{ open: openSelect === 'status' }"
+              aria-haspopup="listbox"
+              :aria-expanded="openSelect === 'status'"
+              @click="toggleSelect('status')"
+            >
+              <span>{{ statusFilterLabel }}</span>
+              <ChevronDown :size="17" aria-hidden="true" />
+            </button>
+            <div v-if="openSelect === 'status'" class="custom-select-menu" role="listbox">
+              <button
+                v-for="item in statusOptions"
+                :key="item.value"
+                type="button"
+                class="custom-select-option"
+                :class="{ active: statusFilter === item.value }"
+                role="option"
+                :aria-selected="statusFilter === item.value"
+                @click="selectStatus(item.value)"
+              >
+                {{ item.label }}
+              </button>
+            </div>
+          </div>
         </div>
         <div class="filter-item">
           <span class="field-label">时间</span>
-          <div class="date-field">
-            <span>选择日期范围</span>
-            <span>🗓</span>
+          <div class="date-range-field">
+            <button type="button" class="date-segment" :class="{ filled: startDate, open: activeDateField === 'start' }" @click.stop="openDatePicker('start')">
+              <span class="date-label">开始</span>
+              <span v-if="startDate" class="date-value">{{ startDate }}</span>
+              <CalendarDays class="date-icon" :size="15" aria-hidden="true" />
+            </button>
+            <span class="date-divider">至</span>
+            <button type="button" class="date-segment" :class="{ filled: endDate, open: activeDateField === 'end' }" @click.stop="openDatePicker('end')">
+              <span class="date-label">结束</span>
+              <span v-if="endDate" class="date-value">{{ endDate }}</span>
+              <CalendarDays class="date-icon" :size="15" aria-hidden="true" />
+            </button>
+          </div>
+          <div v-if="activeDateField" class="date-picker-popover" @click.stop>
+            <div class="date-picker-header">
+              <button type="button" class="date-picker-icon-button" aria-label="上个月" @click="shiftCalendarMonth(-1)">
+                <ChevronLeft :size="17" aria-hidden="true" />
+              </button>
+              <strong>{{ calendarTitle }}</strong>
+              <button type="button" class="date-picker-icon-button" aria-label="下个月" @click="shiftCalendarMonth(1)">
+                <ChevronRight :size="17" aria-hidden="true" />
+              </button>
+            </div>
+            <div class="date-picker-weekdays">
+              <span v-for="day in weekdays" :key="day">{{ day }}</span>
+            </div>
+            <div class="date-picker-grid">
+              <button
+                v-for="day in calendarDays"
+                :key="day.value"
+                type="button"
+                class="date-picker-day"
+                :class="{ muted: !day.inMonth, selected: day.value === activeDateValue, today: day.value === todayValue }"
+                @click="selectCalendarDate(day.value)"
+              >
+                {{ day.label }}
+              </button>
+            </div>
+            <div class="date-picker-actions">
+              <button type="button" @click="clearActiveDate">清除</button>
+              <button type="button" @click="selectCalendarDate(todayValue)">今天</button>
+            </div>
           </div>
         </div>
-        <button type="button" class="ghost-button" @click="resetFilters">重置</button>
+        <button type="button" class="ghost-button records-reset-button" @click="resetFilters">重置</button>
       </div>
 
       <BaseTable :columns="recordColumns" :rows="pagedRecords" row-key="id">
@@ -85,8 +178,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
+import { CalendarDays, ChevronDown, ChevronLeft, ChevronRight } from 'lucide-vue-next'
 import { deleteSplitRecord, getSplitRecords } from '../api/address'
 import BaseTable from '../components/BaseTable.vue'
 import PageHeader from '../components/PageHeader.vue'
@@ -97,7 +191,10 @@ import type { SplitRecord, TableColumn } from '../types'
 
 const records = ref<SplitRecord[]>([])
 const taskKeyword = ref('')
+const storageFilter = ref('all')
 const statusFilter = ref('all')
+const startDate = ref('')
+const endDate = ref('')
 const page = ref(1)
 const pageSize = ref(20)
 const deletingId = ref('')
@@ -105,6 +202,35 @@ const message = ref('')
 const messageType = ref<'success' | 'danger'>('success')
 let messageTimer: number | undefined
 const pageSizeOptions = [20, 50, 100]
+const storageOptions = [
+  { label: '全部', value: 'all' },
+  { label: 'Redis', value: 'redis' },
+  { label: 'SQLite', value: 'sqlite' },
+]
+const weekdays = ['日', '一', '二', '三', '四', '五', '六']
+const todayValue = formatDate(new Date())
+const openSelect = ref<'storage' | 'status' | ''>('')
+const activeDateField = ref<'start' | 'end' | ''>('')
+const calendarMonth = ref(startOfMonth(new Date()))
+
+const storageFilterLabel = computed(() => storageOptions.find((item) => item.value === storageFilter.value)?.label ?? '全部')
+const statusFilterLabel = computed(() => statusOptions.find((item) => item.value === statusFilter.value)?.label ?? '全部')
+const activeDateValue = computed(() => (activeDateField.value === 'start' ? startDate.value : activeDateField.value === 'end' ? endDate.value : ''))
+const calendarTitle = computed(() => `${calendarMonth.value.getFullYear()}年${String(calendarMonth.value.getMonth() + 1).padStart(2, '0')}月`)
+const calendarDays = computed(() => {
+  const monthStart = calendarMonth.value
+  const firstDay = new Date(monthStart)
+  firstDay.setDate(1 - firstDay.getDay())
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(firstDay)
+    date.setDate(firstDay.getDate() + index)
+    return {
+      label: String(date.getDate()),
+      value: formatDate(date),
+      inMonth: date.getMonth() === monthStart.getMonth(),
+    }
+  })
+})
 
 const recordColumns: TableColumn[] = [
   { key: 'taskName', label: '任务名称', width: '250px' },
@@ -119,11 +245,84 @@ const recordColumns: TableColumn[] = [
   { key: 'actions', label: '操作', width: '150px' },
 ]
 
+function formatDate(date: Date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function parseDate(value: string) {
+  if (!value) {
+    return null
+  }
+
+  const [year, month, day] = value.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+function startOfMonth(date: Date) {
+  return new Date(date.getFullYear(), date.getMonth(), 1)
+}
+
+const closeFloatingControls = () => {
+  openSelect.value = ''
+  activeDateField.value = ''
+}
+
+const toggleSelect = (type: 'storage' | 'status') => {
+  activeDateField.value = ''
+  openSelect.value = openSelect.value === type ? '' : type
+}
+
+const selectStorage = (value: string) => {
+  storageFilter.value = value
+  openSelect.value = ''
+}
+
+const selectStatus = (value: string) => {
+  statusFilter.value = value
+  openSelect.value = ''
+}
+
+const openDatePicker = (field: 'start' | 'end') => {
+  openSelect.value = ''
+  activeDateField.value = activeDateField.value === field ? '' : field
+  const selected = parseDate(field === 'start' ? startDate.value : endDate.value)
+  calendarMonth.value = startOfMonth(selected ?? new Date())
+}
+
+const shiftCalendarMonth = (offset: number) => {
+  calendarMonth.value = new Date(calendarMonth.value.getFullYear(), calendarMonth.value.getMonth() + offset, 1)
+}
+
+const selectCalendarDate = (value: string) => {
+  if (activeDateField.value === 'start') {
+    startDate.value = value
+  } else if (activeDateField.value === 'end') {
+    endDate.value = value
+  }
+  activeDateField.value = ''
+}
+
+const clearActiveDate = () => {
+  if (activeDateField.value === 'start') {
+    startDate.value = ''
+  } else if (activeDateField.value === 'end') {
+    endDate.value = ''
+  }
+  activeDateField.value = ''
+}
+
 const filteredRecords = computed(() =>
   records.value.filter((item) => {
     const byKeyword = !taskKeyword.value || item.taskName.includes(taskKeyword.value)
+    const byStorage = storageFilter.value === 'all' || item.storageBackend === storageFilter.value
     const byStatus = statusFilter.value === 'all' || item.status === statusFilter.value
-    return byKeyword && byStatus
+    const recordDate = item.startedAt.slice(0, 10)
+    const afterStart = !startDate.value || recordDate >= startDate.value
+    const beforeEnd = !endDate.value || recordDate <= endDate.value
+    return byKeyword && byStorage && byStatus && afterStart && beforeEnd
   }),
 )
 
@@ -143,7 +342,11 @@ const pagedRecords = computed(() => {
 
 const resetFilters = () => {
   taskKeyword.value = ''
+  storageFilter.value = 'all'
   statusFilter.value = 'all'
+  startDate.value = ''
+  endDate.value = ''
+  closeFloatingControls()
 }
 
 const loadRecords = async () => {
@@ -229,36 +432,396 @@ const changePageSize = (nextPageSize: number) => {
   page.value = 1
 }
 
-watch([taskKeyword, statusFilter], () => {
+watch([taskKeyword, storageFilter, statusFilter, startDate, endDate], () => {
   page.value = 1
 })
 
 onMounted(async () => {
+  window.addEventListener('click', closeFloatingControls)
   await loadRecords()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('click', closeFloatingControls)
 })
 </script>
 
 <style scoped>
 .records-filters {
-  align-items: flex-end;
+  display: grid;
+  grid-template-columns: minmax(220px, 1.25fr) minmax(130px, 0.65fr) minmax(140px, 0.72fr) minmax(280px, 1.25fr) auto;
+  align-items: end;
+  gap: 14px;
   margin-bottom: 22px;
+  padding: 14px;
+  border: 1px solid rgba(221, 230, 240, 0.88);
+  border-radius: 14px;
+  background: rgba(246, 249, 253, 0.72);
 }
 
 .filter-item {
+  position: relative;
   display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.filter-item .field-label {
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.2;
+}
+
+.filter-item :deep(.input),
+.custom-select-trigger,
+.records-reset-button {
+  height: 42px;
+}
+
+.filter-item :deep(.input) {
+  border-color: rgba(201, 213, 227, 0.82);
+  border-radius: 10px;
+  background: rgba(241, 245, 249, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+}
+
+.filter-item :deep(.input::placeholder) {
+  color: #94a3b8;
+}
+
+.filter-item :deep(.input:focus) {
+  background: #fff;
+}
+
+.custom-select {
+  position: relative;
+}
+
+.custom-select-trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 14px;
+  border: 1px solid rgba(201, 213, 227, 0.82);
+  border-radius: 12px;
+  background: rgba(241, 245, 249, 0.82);
+  color: var(--text-main);
+  font-weight: 650;
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.custom-select-trigger svg {
+  color: #334155;
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.custom-select-trigger.open {
+  border-color: rgba(37, 99, 235, 0.48);
+  background: #fff;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+.custom-select-trigger.open svg {
+  color: #2563eb;
+  transform: rotate(180deg);
+}
+
+.custom-select-menu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% + 8px);
+  z-index: 30;
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid rgba(201, 213, 227, 0.9);
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.14);
+  animation: popover-in 0.16s ease both;
+}
+
+.custom-select-option {
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: #334155;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.custom-select-option:hover,
+.custom-select-option.active {
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.78);
+}
+
+.date-range-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px minmax(0, 1fr);
+  align-items: center;
   gap: 8px;
+  padding: 5px;
+  border: 1px solid rgba(147, 197, 253, 0.48);
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 8px 20px rgba(37, 99, 235, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.96);
 }
 
-.filter-item:nth-child(1) {
-  width: 290px;
+.date-segment {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: rgba(241, 245, 249, 0.82);
+  color: #64748b;
+  cursor: pointer;
+  transition: background-color 0.22s ease, box-shadow 0.22s ease, padding 0.22s ease;
 }
 
-.filter-item:nth-child(2) {
-  width: 190px;
+.date-segment.filled {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  justify-content: stretch;
+  gap: 8px;
+  padding: 0 9px;
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(147, 197, 253, 0.28);
 }
 
-.filter-item:nth-child(3) {
-  width: 240px;
+.date-label {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(0);
+  transition: color 0.22s ease, font-size 0.22s ease, transform 0.22s ease;
+}
+
+.date-segment.filled .date-label {
+  color: #64748b;
+  font-size: 12px;
+  transform: translateX(-1px);
+}
+
+.date-value {
+  min-width: 0;
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  pointer-events: none;
+  animation: date-value-in 0.22s ease both;
+}
+
+.date-icon {
+  flex: 0 0 auto;
+  color: #1d4ed8;
+  pointer-events: none;
+  transform: translateX(0);
+  transition: color 0.22s ease, transform 0.22s ease;
+}
+
+.date-segment.filled .date-icon {
+  color: #2563eb;
+  transform: translateX(1px);
+}
+
+.date-divider {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.9);
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.date-segment.open {
+  background: #fff;
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.36), 0 0 0 3px rgba(37, 99, 235, 0.11);
+}
+
+.records-reset-button {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 10px;
+  color: #475569;
+  border-color: rgba(201, 213, 227, 0.82);
+  background: rgba(241, 245, 249, 0.82);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.42);
+}
+
+.date-picker-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 35;
+  width: min(330px, 100%);
+  padding: 14px;
+  border: 1px solid rgba(201, 213, 227, 0.9);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 22px 56px rgba(15, 23, 42, 0.16);
+  animation: popover-in 0.16s ease both;
+}
+
+.date-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.date-picker-header strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.date-picker-icon-button {
+  display: inline-grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border-radius: 10px;
+  color: #475569;
+  background: rgba(241, 245, 249, 0.88);
+  cursor: pointer;
+}
+
+.date-picker-icon-button:hover {
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.85);
+}
+
+.date-picker-weekdays,
+.date-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.date-picker-weekdays {
+  margin-bottom: 6px;
+}
+
+.date-picker-weekdays span {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+}
+
+.date-picker-grid {
+  gap: 4px;
+}
+
+.date-picker-day {
+  display: inline-grid;
+  height: 34px;
+  place-items: center;
+  border-radius: 10px;
+  color: #1e293b;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.date-picker-day:hover {
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.7);
+}
+
+.date-picker-day.muted {
+  color: #94a3b8;
+}
+
+.date-picker-day.today {
+  box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.3);
+}
+
+.date-picker-day.selected {
+  color: #fff;
+  background: linear-gradient(135deg, #2563eb, #0f766e);
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.26);
+}
+
+.date-picker-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-top: 12px;
+}
+
+.date-picker-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: #1d4ed8;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.date-picker-actions button:hover {
+  background: rgba(219, 234, 254, 0.76);
+}
+
+@keyframes date-value-in {
+  from {
+    opacity: 0;
+    transform: translateY(3px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (max-width: 1180px) {
+  .records-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .filter-item:nth-child(4),
+  .records-reset-button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .records-filters {
+    grid-template-columns: 1fr;
+    padding: 12px;
+  }
 }
 
 .scheme-chip {

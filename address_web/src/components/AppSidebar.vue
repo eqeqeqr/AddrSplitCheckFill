@@ -27,12 +27,13 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
 import type { Component } from 'vue'
-import { Circle, ClipboardList, MapPinned, Settings2, ShieldCheck } from 'lucide-vue-next'
+import { Circle, ClipboardList, FileSearch, MapPinned, Settings2, ShieldCheck } from 'lucide-vue-next'
 import { navigationItems } from '../mock/data'
 
 const route = useRoute()
 const navIconMap: Record<string, Component> = {
   home: MapPinned,
+  fill: FileSearch,
   validation: ShieldCheck,
   record: ClipboardList,
   config: Settings2,

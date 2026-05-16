@@ -5,6 +5,8 @@ import ResultDetailView from '../views/ResultDetailView.vue'
 import ValidationRulesView from '../views/ValidationRulesView.vue'
 import SplitView from '../views/SplitView.vue'
 import EnvironmentView from '../views/EnvironmentView.vue'
+import AddressFillView from '../views/AddressFillView.vue'
+import AddressFillRecordsView from '../views/AddressFillRecordsView.vue'
 
 const router = createRouter({
   history: createWebHistory(),
@@ -15,6 +17,8 @@ const router = createRouter({
       children: [
         { path: '', redirect: '/split' },
         { path: 'split', component: SplitView },
+        { path: 'address-fill', component: AddressFillView },
+        { path: 'address-fill/records', component: AddressFillRecordsView },
         { path: 'validation-rules', component: ValidationRulesView },
         { path: 'records', component: RecordsView },
         { path: 'records/:id', component: ResultDetailView },

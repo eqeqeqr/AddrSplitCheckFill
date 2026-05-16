@@ -13,6 +13,7 @@ import type {
 
 export const navigationItems: NavItem[] = [
   { label: '地址拆分', path: '/split', icon: 'home' },
+  { label: '地址补全', path: '/address-fill', icon: 'fill' },
   { label: '自定义校验规则', path: '/validation-rules', icon: 'validation' },
   { label: '拆分记录', path: '/records', icon: 'record' },
   { label: '环境配置', path: '/environment', icon: 'config' },

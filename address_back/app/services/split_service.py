@@ -187,6 +187,8 @@ def split_dataframe(
     result_df = pd.DataFrame(rows, columns=_result_columns_for_mode(original_columns, column_mode, resolved_raw_fields))
     result_file = RESULT_DIR / f"{job_id}.xlsx"
     result_df.to_excel(result_file, index=False)
+    success_rows = len(result_df)
+    failed_rows = max(process_total - success_rows, 0) if cancelled else 0
 
     detail = SplitJobDetail(
         job_id=job_id,
@@ -197,12 +199,12 @@ def split_dataframe(
         columns=list(result_df.columns),
         task_name=task_name or f"地址拆分_{job_id[:8]}",
         source=source or "手动输入",
-        success_rows=len(result_df),
-        failed_rows=0,
+        success_rows=success_rows,
+        failed_rows=failed_rows,
         created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         raw_fields=resolved_raw_fields if column_mode == ColumnMode.raw else None,
         result_file=str(result_file),
-        cache_key=cache_key,
+        cache_key=None if cancelled else cache_key,
     )
     save_job(detail, result_df.fillna("").to_dict(orient="records"))
     emit_progress("cancelled" if cancelled else "done", len(result_df), "已结束拆分，已保留当前结果" if cancelled else "拆分完成")

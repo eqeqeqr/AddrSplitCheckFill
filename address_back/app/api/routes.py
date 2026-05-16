@@ -3,7 +3,7 @@ import asyncio
 import json
 import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, Query, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from app.core.config import DEFAULT_SAMPLE_SIZE, UPLOAD_DIR
@@ -12,6 +12,13 @@ from app.schemas.address import (
     ColumnMode,
     ColumnSchemaResponse,
     ExcelInspectResponse,
+    ModelConfigActivateResponse,
+    ModelConfigListResponse,
+    ModelConfigPayload,
+    ModelConfigResponse,
+    ModelConfigTestResponse,
+    RedisConfigActivateResponse,
+    RedisConfigListResponse,
     RedisConfigPayload,
     RedisConfigResponse,
     RedisStatusResponse,
@@ -23,6 +30,15 @@ from app.schemas.address import (
     ValidationRulePayload,
     ValidationRuleResponse,
 )
+from app.schemas.address_fill import (
+    AddressFillInputInspectResponse,
+    AddressFillJobResponse,
+    AddressFillLatestWorkflowResponse,
+    AddressFillRecordResponse,
+    AddressFillResultDetailResponse,
+    AddressFillSplitResultResponse,
+    AddressFillWorkflowEvent,
+)
 from app.services.constants import (
     LEVEL8_FIELDS,
     LEVEL11_FIELDS,
@@ -30,7 +46,21 @@ from app.services.constants import (
     RAW_FIELDS,
     VALIDATION_LEVEL_OPTIONS,
 )
-from app.services.environment_config import get_redis_config, save_redis_config
+from app.services.environment_config import (
+    activate_redis_config,
+    delete_redis_config,
+    get_redis_config,
+    list_redis_configs,
+    save_redis_config,
+    upsert_redis_config,
+)
+from app.services.model_config import (
+    activate_model_config,
+    delete_model_config,
+    list_model_configs,
+    test_model_config,
+    upsert_model_config,
+)
 from app.services.redis_store import get_redis_status, reset_redis_connection, test_connection
 from app.services.split_service import (
     get_cached_job,
@@ -50,6 +80,20 @@ from app.services.validation_rule_service import (
     update_validation_rule,
     upsert_validation_rule,
     validation_rules_fingerprint,
+)
+from app.services.address_fill_service import (
+    create_address_fill_job_from_split,
+    create_address_fill_job_from_upload,
+    delete_address_fill_job,
+    get_address_fill_job,
+    get_latest_workflow,
+    get_row_states,
+    inspect_address_fill_input,
+    list_address_fill_events,
+    list_address_fill_records,
+    list_fillable_split_results,
+    read_address_fill_rows,
+    should_cancel_fill_job,
 )
 from app.services.job_store import build_cache_key
 from app.services.progress_ws import progress_manager
@@ -143,6 +187,34 @@ def update_redis_environment(payload: RedisConfigPayload) -> RedisConfigResponse
     return result
 
 
+@router.get("/environment/redis/configs", response_model=RedisConfigListResponse)
+def read_redis_config_list() -> RedisConfigListResponse:
+    return list_redis_configs()
+
+
+@router.post("/environment/redis/configs", response_model=RedisConfigResponse)
+def save_redis_config_item(payload: RedisConfigPayload) -> RedisConfigResponse:
+    return upsert_redis_config(payload)
+
+
+@router.delete("/environment/redis/configs/{config_id}")
+def remove_redis_config_item(config_id: str) -> dict[str, bool]:
+    deleted = delete_redis_config(config_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Redis 配置不存在")
+    reset_redis_connection()
+    return {"deleted": True}
+
+
+@router.post("/environment/redis/configs/{config_id}/activate", response_model=RedisConfigActivateResponse)
+def activate_redis_config_item(config_id: str) -> RedisConfigActivateResponse:
+    result = activate_redis_config(config_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Redis 配置不存在")
+    reset_redis_connection()
+    return result
+
+
 @router.post("/environment/redis/disconnect", response_model=RedisConfigResponse)
 def disconnect_redis_environment() -> RedisConfigResponse:
     result = save_redis_config(
@@ -162,6 +234,37 @@ def disconnect_redis_environment() -> RedisConfigResponse:
 def test_redis_environment(payload: RedisConfigPayload) -> RedisTestResponse:
     ok, message = test_connection(payload.model_dump())
     return RedisTestResponse(ok=ok, message=message)
+
+
+@router.get("/environment/models", response_model=ModelConfigListResponse)
+def read_model_environment() -> ModelConfigListResponse:
+    return list_model_configs()
+
+
+@router.post("/environment/models", response_model=ModelConfigResponse)
+def save_model_environment(payload: ModelConfigPayload) -> ModelConfigResponse:
+    return upsert_model_config(payload)
+
+
+@router.delete("/environment/models/{config_id}")
+def remove_model_environment(config_id: str) -> dict[str, bool]:
+    deleted = delete_model_config(config_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="模型配置不存在")
+    return {"deleted": True}
+
+
+@router.post("/environment/models/test", response_model=ModelConfigTestResponse)
+def test_model_environment(payload: ModelConfigPayload) -> ModelConfigTestResponse:
+    return test_model_config(payload)
+
+
+@router.post("/environment/models/{config_id}/activate", response_model=ModelConfigActivateResponse)
+def activate_model_environment(config_id: str) -> ModelConfigActivateResponse:
+    result = activate_model_config(config_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="模型配置不存在")
+    return result
 
 
 @router.post("/excels/inspect", response_model=ExcelInspectResponse)
@@ -354,6 +457,199 @@ def list_splits() -> list[SplitRecordResponse]:
     return records
 
 
+@router.post("/address-fill/inputs/inspect", response_model=AddressFillInputInspectResponse)
+async def inspect_address_fill_upload(file: UploadFile = File(...)) -> AddressFillInputInspectResponse:
+    suffix = Path(file.filename or "").suffix.lower()
+    if suffix not in {".xlsx", ".xls"}:
+        raise HTTPException(status_code=400, detail="仅支持 .xlsx 或 .xls 文件")
+
+    filename = file.filename or "upload.xlsx"
+    upload_path = UPLOAD_DIR / f"address_fill_inspect_{Path(filename).stem}_{id(file)}{suffix}"
+    upload_path.write_bytes(await file.read())
+    try:
+        return inspect_address_fill_input(upload_path, filename)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"补全输入检测失败：{exc}") from exc
+    finally:
+        if upload_path.exists():
+            upload_path.unlink()
+
+
+@router.get("/address-fill/split-results", response_model=list[AddressFillSplitResultResponse])
+def get_address_fill_split_results() -> list[AddressFillSplitResultResponse]:
+    return list_fillable_split_results()
+
+
+@router.websocket("/ws/address-fill/{job_id}")
+async def address_fill_ws(websocket: WebSocket, job_id: str) -> None:
+    async def fetch_full_state() -> dict:
+        states = get_row_states(job_id)
+        return {
+            "event_type": "full_row_states",
+            "job_id": job_id,
+            "row_states": states,
+        }
+
+    progress_manager.register_full_state_fetcher(job_id, fetch_full_state)
+    try:
+        await progress_manager.connect(job_id, websocket)
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    finally:
+        progress_manager.disconnect(job_id, websocket)
+        progress_manager.unregister_full_state_fetcher(job_id)
+
+
+@router.post("/address-fill/jobs/{job_id}/cancel")
+def cancel_address_fill(job_id: str) -> dict[str, bool]:
+    request_cancel(job_id)
+    return {"cancelled": True}
+
+
+@router.delete("/address-fill/jobs/{job_id}")
+def delete_address_fill(job_id: str) -> dict[str, bool]:
+    if not delete_address_fill_job(job_id):
+        raise HTTPException(status_code=404, detail="任务不存在")
+    return {"deleted": True}
+
+
+@router.post("/address-fill/jobs", response_model=AddressFillJobResponse)
+async def create_address_fill_job_endpoint(
+    client_id: str = Form(...),
+    input_file: UploadFile | None = File(None),
+    split_job_id: str | None = Form(None),
+    client_job_id: str | None = Form(None),
+    source_files: list[UploadFile] | None = File(None),
+) -> AddressFillJobResponse:
+    if input_file is None and not split_job_id:
+        raise HTTPException(status_code=400, detail="请选择拆分结果或上传补全输入 Excel")
+    if input_file is not None and split_job_id:
+        raise HTTPException(status_code=400, detail="拆分结果和上传 Excel 只能选择一种")
+
+    sources = source_files or []
+    source_uploads = [(source.filename or "未命名资料", await source.read()) for source in sources]
+    job_id = client_job_id or uuid.uuid4().hex
+    loop = asyncio.get_running_loop()
+    publish = _publish_from_worker(loop, job_id)
+
+    filename = ""
+    input_content = b""
+    if input_file is not None:
+        filename = input_file.filename or "upload.xlsx"
+        input_content = await input_file.read()
+
+    async def _run_fill() -> None:
+        try:
+            if input_file is not None:
+                await asyncio.to_thread(
+                    create_address_fill_job_from_upload,
+                    client_id=client_id,
+                    filename=filename,
+                    content=input_content,
+                    source_files=source_uploads,
+                    job_id=job_id,
+                    progress_callback=publish,
+                )
+            else:
+                await asyncio.to_thread(
+                    create_address_fill_job_from_split,
+                    client_id=client_id,
+                    split_job_id=split_job_id or "",
+                    source_files=source_uploads,
+                    job_id=job_id,
+                    progress_callback=publish,
+                )
+        except Exception as exc:
+            await progress_manager.publish(job_id, {"phase": "error", "processed_rows": 0, "total_rows": 0, "elapsed_seconds": 0, "message": f"地址补全任务执行失败：{exc}"})
+
+    asyncio.create_task(_run_fill())
+
+    return AddressFillJobResponse(
+        job_id=job_id,
+        status="running",
+        total_rows=0,
+        processed_rows=0,
+        columns=[],
+        preview=[],
+        download_url=f"/api/address-fill/jobs/{job_id}/download",
+    )
+
+
+@router.get("/address-fill/jobs", response_model=list[AddressFillRecordResponse])
+def list_address_fill_jobs() -> list[AddressFillRecordResponse]:
+    return list_address_fill_records()
+
+
+@router.get("/address-fill/workflow/latest", response_model=AddressFillLatestWorkflowResponse)
+def get_latest_address_fill_workflow(client_id: str = Query(...)) -> AddressFillLatestWorkflowResponse:
+    job, events = get_latest_workflow(client_id)
+    return AddressFillLatestWorkflowResponse(job=job, events=events)
+
+
+@router.get("/address-fill/jobs/{job_id}/events", response_model=list[AddressFillWorkflowEvent])
+def get_address_fill_events(job_id: str, after_event_id: str | None = Query(None)) -> list[AddressFillWorkflowEvent]:
+    if get_address_fill_job(job_id) is None:
+        raise HTTPException(status_code=404, detail="补全任务不存在")
+    return list_address_fill_events(job_id, after_event_id)
+
+
+@router.get("/address-fill/jobs/{job_id}/row-states")
+def get_address_fill_row_states_endpoint(job_id: str) -> list[dict]:
+    if get_address_fill_job(job_id) is None:
+        raise HTTPException(status_code=404, detail="补全任务不存在")
+    return get_row_states(job_id)
+
+
+@router.get("/address-fill/jobs/{job_id}/result", response_model=AddressFillResultDetailResponse)
+def get_address_fill_result(
+    job_id: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(200, ge=1, le=1000),
+) -> AddressFillResultDetailResponse:
+    job = get_address_fill_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="补全任务不存在")
+
+    rows, row_total = read_address_fill_rows(job, page=page, page_size=page_size)
+    counted_rows = job.success_rows + job.failed_rows
+    success_rate = f"{(job.success_rows / counted_rows * 100):.2f}%" if counted_rows else "0.00%"
+    return AddressFillResultDetailResponse(
+        stats={
+            "total": f"{job.total_rows:,}",
+            "success": f"{job.success_rows:,}",
+            "failed": f"{job.failed_rows:,}",
+            "successRate": success_rate,
+        },
+        rows=rows,
+        columns=job.columns,
+        columnMode=job.column_mode,
+        failedRows=[],
+        downloadUrl=f"/api/address-fill/jobs/{job.job_id}/download",
+        page=page,
+        pageSize=page_size,
+        totalRows=row_total,
+    )
+
+
+@router.get("/address-fill/jobs/{job_id}/download")
+def download_address_fill(job_id: str) -> FileResponse:
+    job = get_address_fill_job(job_id)
+    if job is None or not job.result_file:
+        raise HTTPException(status_code=404, detail="结果文件不存在")
+
+    result_file = Path(job.result_file)
+    if not result_file.exists():
+        raise HTTPException(status_code=404, detail="结果文件不存在")
+
+    return FileResponse(
+        result_file,
+        filename=f"address_fill_{job_id}.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @router.post("/splits/text", response_model=SplitJobResponse)
 async def create_text_split(payload: AddressSplitRequest) -> SplitJobResponse:
     job_id = payload.client_job_id or uuid.uuid4().hex
@@ -415,8 +711,8 @@ def get_split_result(
     total = job.total_rows
     success = job.success_rows
     failed = job.failed_rows
-    processed = job.processed_rows
-    success_rate = f"{(success / processed * 100):.2f}%" if processed else "0.00%"
+    counted_rows = success + failed
+    success_rate = f"{(success / counted_rows * 100):.2f}%" if counted_rows else "0.00%"
 
     return SplitResultDetailResponse(
         stats={

@@ -46,3 +46,40 @@ def init_db() -> None:
             )
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS address_fill_jobs (
+                job_id TEXT PRIMARY KEY,
+                client_id TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS address_fill_events (
+                event_id TEXT PRIMARY KEY,
+                job_id TEXT NOT NULL,
+                payload TEXT NOT NULL,
+                sequence INTEGER NOT NULL,
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS address_fill_row_states (
+                job_id TEXT NOT NULL,
+                row_id TEXT NOT NULL,
+                address TEXT DEFAULT '',
+                status TEXT DEFAULT 'waiting',
+                step1_status TEXT DEFAULT 'waiting',
+                step2_status TEXT DEFAULT 'waiting',
+                step3_status TEXT DEFAULT 'waiting',
+                step4_status TEXT DEFAULT 'waiting',
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (job_id, row_id)
+            )
+            """
+        )

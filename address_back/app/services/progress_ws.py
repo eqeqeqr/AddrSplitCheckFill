@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-from typing import Any
+from typing import Any, Callable, Awaitable
 
 from fastapi import WebSocket
 
@@ -11,13 +11,28 @@ class ProgressConnectionManager:
     def __init__(self) -> None:
         self._connections: dict[str, set[WebSocket]] = defaultdict(set)
         self._latest: dict[str, dict[str, Any]] = {}
+        self._full_state_fetchers: dict[str, Callable[[], Awaitable[dict[str, Any]]]] = {}
         self._lock = asyncio.Lock()
+
+    def register_full_state_fetcher(self, job_id: str, fetcher: Callable[[], Awaitable[dict[str, Any]]]) -> None:
+        self._full_state_fetchers[job_id] = fetcher
+
+    def unregister_full_state_fetcher(self, job_id: str) -> None:
+        self._full_state_fetchers.pop(job_id, None)
 
     async def connect(self, job_id: str, websocket: WebSocket) -> None:
         await websocket.accept()
         async with self._lock:
             self._connections[job_id].add(websocket)
             latest = self._latest.get(job_id)
+            fetcher = self._full_state_fetchers.get(job_id)
+
+        if fetcher:
+            try:
+                full_state = await fetcher()
+                await websocket.send_json(full_state)
+            except Exception:
+                pass
 
         if latest:
             await websocket.send_json(latest)
