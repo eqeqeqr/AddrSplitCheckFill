@@ -74,6 +74,7 @@ dependencies = [
     "pyarrow==24.0.0",
     "pydantic==2.13.3",
     "pydantic-core==2.46.3",
+    "pyinstaller>=6.20.0",
     "pyparsing==3.3.2",
     "pypdf>=6.11.0",
     "pythainlp==5.3.4",
@@ -113,9 +114,9 @@ dependencies = [
     "thinc==8.2.4",
     "threadpoolctl==3.6.0",
     "tokenizers==0.21.4",
-    "torch==2.7.1+cu118",
-    "torchaudio==2.7.1+cu118",
-    "torchvision==0.22.1+cu118",
+    "torch==2.7.1+cpu",
+    "torchaudio==2.7.1+cpu",
+    "torchvision==0.22.1+cpu",
     "tqdm==4.67.3",
     "transformers==4.48.3",
     "typer==0.9.4",
@@ -136,11 +137,11 @@ dependencies = [
 ]
 
 [tool.uv.sources]
-torch = { index = "pytorch-cu118" }
-torchaudio = { index = "pytorch-cu118" }
-torchvision = { index = "pytorch-cu118" }
+torch = { index = "pytorch-cpu" }
+torchaudio = { index = "pytorch-cpu" }
+torchvision = { index = "pytorch-cpu" }
 
 [[tool.uv.index]]
-name = "pytorch-cu118"
-url = "https://download.pytorch.org/whl/cu118"
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 explicit = true

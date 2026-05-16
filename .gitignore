@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.venv/
 
 .env
 .env.*
@@ -11,8 +12,13 @@ __pycache__/
 
 address_back/.venv/
 address_back/data/
+address_back/build/
+address_back/dist/
+address_back/static/
 address_back/**/*.pyc
 
+build/
+dist/
 address_web/node_modules/
 address_web/dist/
 address_web/dist-ssr/

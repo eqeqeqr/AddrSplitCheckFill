@@ -1,6 +1,14 @@
 from modelscope.pipelines import pipeline
 from modelscope.utils.constant import Tasks
 import os
+import sys
+
+
+def _get_app_root() -> str:
+    if getattr(sys, 'frozen', False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
 
 class MGeoWhereWhatCut:
     """
@@ -9,17 +17,16 @@ class MGeoWhereWhatCut:
     """
     def __init__(self):
 
-        # 项目根目录（可根据实际项目修改）
-        self.project_root = r"C:\Users\Administrator\Desktop\address_project"
+        self.project_root = _get_app_root()
         self.task = Tasks.token_classification
-        # 拼接模型路径（自动处理路径分隔符，跨平台兼容）
-        self.model_path = os.path.join(self.project_root, "address_back","iic", "mgeo_geographic_where_what_cut_chinese_base")
+        self.model_path = os.path.join(self.project_root, "iic", "mgeo_geographic_where_what_cut_chinese_base")
         
         # 初始化时就加载模型（只加载一次）
         self.pipeline_ins = pipeline(
             task=self.task,
             model=self.model_path,
-            model_revision='master'
+            model_revision='master',
+            device='cpu'
         )
         print("🔥 MGeo地址地点WhereWhat切分-中文-地址领域-base模型 初始化完成！")
 

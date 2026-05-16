@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 try:
     from dotenv import load_dotenv
@@ -6,8 +7,14 @@ except ImportError:  # pragma: no cover - optional until dependency is installed
     load_dotenv = None
 
 
-BASE_DIR = Path(__file__).resolve().parents[2]
-PROJECT_DIR = BASE_DIR.parent
+def _get_base_dir() -> Path:
+    if getattr(sys, 'frozen', False):
+        return Path(sys.executable).parent
+    return Path(__file__).resolve().parents[2]
+
+
+BASE_DIR = _get_base_dir()
+PROJECT_DIR = BASE_DIR.parent if not getattr(sys, 'frozen', False) else BASE_DIR
 ENV_PATH = BASE_DIR / ".env"
 DATA_DIR = BASE_DIR / "data"
 UPLOAD_DIR = DATA_DIR / "uploads"
