@@ -6,10 +6,35 @@ import time
 from pathlib import Path
 
 
+class _LogFileWriter:
+    """只写入日志文件的 writer，用于 uvicorn 启动后的输出"""
+
+    def __init__(self, log_file):
+        self._log_file = log_file
+
+    def write(self, text):
+        self._log_file.write(text)
+        self._log_file.flush()
+
+    def flush(self):
+        self._log_file.flush()
+
+    def isatty(self):
+        return False
+
+
 def _get_app_root() -> Path:
     if getattr(sys, 'frozen', False):
-        return Path(sys._MEIPASS)
+        return Path(sys.executable).parent
     return Path(__file__).parent
+
+
+def _setup_logging(app_root: Path):
+    log_dir = app_root / "data"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "server.log"
+    log_file = open(log_path, "a", encoding="utf-8")
+    return log_path, log_file
 
 
 def check_environment(app_root: Path) -> None:
@@ -37,20 +62,28 @@ def open_browser(url: str, delay: float = 1.5) -> None:
 
 if __name__ == "__main__":
     app_root = _get_app_root()
-    check_environment(app_root)
-
-    host = "127.0.0.1"
-    port = 8008
-    url = f"http://{host}:{port}"
+    log_path, log_file = _setup_logging(app_root)
 
     print("=" * 60)
     print("地址拆分工具")
     print("=" * 60)
-    print(f"服务地址：{url}")
-    print("按 Ctrl+C 停止服务")
+    print("正在启动服务，请稍候...")
+    print(f"日志文件：{log_path}")
+    print("按 Ctrl+C 或关闭窗口停止服务")
     print("=" * 60)
 
-    open_browser(url)
+    check_environment(app_root)
+
+    host = "127.0.0.1"
+    port = 8008
+    url = f"http://{host}:{port}/split"
+
+    open_browser(url, delay=3.0)
+
+    # 启动后将所有输出重定向到日志文件，控制台只保留启动信息
+    tee_writer = _LogFileWriter(log_file)
+    sys.stdout = tee_writer
+    sys.stderr = tee_writer
 
     import uvicorn
     uvicorn.run("app.main:app", host=host, port=port, reload=False)

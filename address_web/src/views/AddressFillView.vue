@@ -443,7 +443,7 @@ const agentRows = computed<AgentRowLog[]>(() => {
       const state = rowStates.value.get(rowId)
       const status = state?.status || (entries.some((e) => e.stage === 'address_end') ? 'done' : entries.length > 0 ? 'running' : 'waiting')
       const summary = status === 'done'
-        ? '已完成全层级地址标准化补全，结果已写入 Excel 预览。'
+        ? '已完成层级地址补全，结果已写入 Excel 预览。'
         : status === 'running'
         ? '智能推理中…'
         : status === 'interrupted'
@@ -533,7 +533,7 @@ const FILL_STEP_DEFS = [
   { key: 'analyze', label: '层级研判：识别原始地址缺失层级' },
   { key: 'target', label: '任务定标：确定需补全的目标地址层级' },
   { key: 'reasoning', label: '智能推理：模型分析与地址补全' },
-  { key: 'output', label: '结果生成：完成全层级地址标准化补全' },
+  { key: 'output', label: '结果生成：完成层级地址补全' },
 ]
 
 const getFillSteps = (row: AgentRowLog): FillStep[] => {

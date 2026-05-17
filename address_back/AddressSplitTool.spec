@@ -11,6 +11,7 @@ a = Analysis(
         ('static', 'static'),
         ('iic', 'iic'),
         (r'.venv\Lib\site-packages\modelscope\utils\ast_index_file.py', 'modelscope/utils'),
+        (r'app\services\agent_prompt.md', 'app/services'),
     ],
     hiddenimports=[
         'uvicorn',

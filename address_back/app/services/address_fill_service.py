@@ -630,7 +630,7 @@ def create_address_fill_job(
         _emit_and_save_step(
             4,
             "step",
-            "结果生成：完成全层级地址标准化补全",
+            "结果生成：完成层级地址补全",
             f"已补全 {len(filled_levels)} 个层级" if filled_levels else row_result.message,
             {"event_id": f"{job_id}-s{row_id}-4", "row_id": row_id, "step": 4, "filled_levels": filled_levels},
         )
